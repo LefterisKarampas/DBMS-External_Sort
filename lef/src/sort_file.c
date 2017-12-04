@@ -169,8 +169,24 @@ SR_ErrorCode SR_SortedFile(
   int fieldNo,
   int bufferSize
 ) {
-  // Your code goes here
-
+    int fileDesc;
+    SR_OpenFile(input_filename, &fileDesc);
+    BF_Block *block;
+    SR_ErrorCode error;
+    BF_Block_Init(&block);
+    int block_num;
+    if((error=BF_GetBlock(fileDesc,0, block)) != BF_OK){                 //Get the first block
+      BF_Block_Destroy(&block); 
+      BF_PrintError(error);                                                 //If fails
+      return SR_ERROR;                                                      //Return error
+    }
+    char *data;
+    data = BF_Block_GetData(block);
+    memcpy(&block_num,&(data[3]),sizeof(int));
+    BF_UnpinBlock(block);
+    printf("HERE\n");
+    SortBlock(block_num,fileDesc,fieldNo);
+    BF_Block_Destroy(&block);
   return SR_OK;
 }
 

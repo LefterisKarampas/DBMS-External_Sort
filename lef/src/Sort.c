@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "Compare.h"
+#include "Print.h"
 #include <stdio.h>
 
 
@@ -103,12 +104,30 @@ int SortBlock(int num_block,int fileDesc,int fieldNo){
 			break;
 		}
 	}
-	QuickSort(data,size,wall,pivot,m,type,length,pivot_value);
-	free(pivot_value);
-	int next_pointer;
-	memcpy(&next_pointer,&(data[BF_BLOCK_SIZE-sizeof(int)]),sizeof(int));
-	BF_Block_SetDirty(block);
-	BF_UnpinBlock(block);
+	int next_pointer = num_block;
+	while(1){
+		QuickSort(data,size,wall,pivot,m,type,length,pivot_value);
+		BF_Block_SetDirty(block);
+		BF_UnpinBlock(block);
+		PrintBlock(fileDesc,next_pointer);
+		printf("-----------------------\n");
+		memcpy(&next_pointer,&(data[BF_BLOCK_SIZE-sizeof(int)]),sizeof(int));
+		if(next_pointer != -1){
+			if((error=BF_GetBlock(fileDesc,next_pointer, block)) != BF_OK){                     //Get the first block
+				BF_Block_Destroy(&block); 
+			    BF_PrintError(error);                                                         //If fails
+			    return SR_ERROR;                                                              //Return error
+			}
+			data = BF_Block_GetData(block);
+			memcpy(&counter,data,sizeof(int));
+			pivot = counter -1;
+			wall = 0;
+		}
+		else{
+			break;
+		}
+	}
 	BF_Block_Destroy(&block);
+	free(pivot_value);
 	return next_pointer;
 }
