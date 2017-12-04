@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "Sort.h"
+#include "Print.h"
 
 #include "bf.h"
 #include "sort_file.h"
@@ -80,7 +82,10 @@ int main() {
   }
 
   printf("RUN PrintAllEntries\n");
-  CALL_OR_DIE(SR_PrintAllEntries(fd));
+  //CALL_OR_DIE(SR_PrintAllEntries(fd));
+  SortBlock(1,fd,1);
+  PrintBlock(fd,1);
+  //CALL_OR_DIE(SR_PrintAllEntries(fd));
 
   CALL_OR_DIE(SR_CloseFile(fd));
   BF_Close();
