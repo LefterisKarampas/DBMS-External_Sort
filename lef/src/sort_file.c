@@ -170,7 +170,10 @@ SR_ErrorCode SR_SortedFile(
   int bufferSize
 ) {
     int fileDesc;
+    int out_fileDesc;
     SR_OpenFile(input_filename, &fileDesc);
+    SR_CreateFile(output_filename);
+    SR_OpenFile(output_filename,&out_fileDesc);
     BF_Block *block;
     SR_ErrorCode error;
     BF_Block_Init(&block);
@@ -184,20 +187,24 @@ SR_ErrorCode SR_SortedFile(
     data = BF_Block_GetData(block);
     memcpy(&block_num,&(data[3]),sizeof(int));
     BF_UnpinBlock(block);
-    printf("HERE\n");
-    SortBlock(block_num,fileDesc,fieldNo);
+
+    MergeSort(block_num,fileDesc,out_fileDesc,fieldNo,bufferSize);
     BF_Block_Destroy(&block);
   return SR_OK;
 }
 
+
+
 SR_ErrorCode SR_PrintAllEntries(int fileDesc) {
   BF_Block *block;
   SR_ErrorCode error;
+  printf("IN SR_PrintAllEntries\n");
   BF_Block_Init(&block);
   int block_num;
   if((error=BF_GetBlock(fileDesc,0, block)) != BF_OK){                 //Get the first block
     BF_Block_Destroy(&block); 
     BF_PrintError(error);                                                 //If fails
+    printf("SR_PrintAllEntries\n");
     return SR_ERROR;                                                      //Return error
   }
   char *data;
@@ -205,6 +212,7 @@ SR_ErrorCode SR_PrintAllEntries(int fileDesc) {
   memcpy(&block_num,&(data[3]),sizeof(int));
   BF_UnpinBlock(block);
   int temp;
+  block_num = 1;
   while((temp = PrintBlock(fileDesc,block_num)) != -1){
     block_num = temp;
   }    

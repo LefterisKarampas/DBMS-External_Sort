@@ -5,8 +5,9 @@
 #include <stdlib.h>
 #include "Compare.h"
 #include "Print.h"
+#include "Struct.h"
 #include <stdio.h>
-
+#include <math.h>
 
 void swap(char *data,int size,int i,int j){
 	Record record;
@@ -51,21 +52,11 @@ void QuickSort(char *data,int size,int wall,int pivot,int m,char type,int length
 }
 
 
-int SortBlock(int num_block,int fileDesc,int fieldNo){
+int SortBlock(int num_block,BF_Block *block,char *data,int fieldNo){
 	if(num_block == -1){
 		return -1;
 	}
-	BF_Block *block;
-	BF_Block_Init(&block);
-	char *data;
 	int counter;
-	SR_ErrorCode error;
-	if((error=BF_GetBlock(fileDesc,num_block, block)) != BF_OK){                     //Get the first block
-		BF_Block_Destroy(&block); 
-	    BF_PrintError(error);                                                         //If fails
-	    return SR_ERROR;                                                              //Return error
-	}
-	data = BF_Block_GetData(block);
 	memcpy(&counter,data,sizeof(int));
 	int pivot = counter -1;
 	int wall = 0;
@@ -105,29 +96,285 @@ int SortBlock(int num_block,int fileDesc,int fieldNo){
 		}
 	}
 	int next_pointer = num_block;
-	while(1){
-		QuickSort(data,size,wall,pivot,m,type,length,pivot_value);
-		BF_Block_SetDirty(block);
-		BF_UnpinBlock(block);
-		PrintBlock(fileDesc,next_pointer);
-		printf("-----------------------\n");
-		memcpy(&next_pointer,&(data[BF_BLOCK_SIZE-sizeof(int)]),sizeof(int));
-		if(next_pointer != -1){
-			if((error=BF_GetBlock(fileDesc,next_pointer, block)) != BF_OK){                     //Get the first block
-				BF_Block_Destroy(&block); 
-			    BF_PrintError(error);                                                         //If fails
-			    return SR_ERROR;                                                              //Return error
-			}
-			data = BF_Block_GetData(block);
-			memcpy(&counter,data,sizeof(int));
-			pivot = counter -1;
-			wall = 0;
+	QuickSort(data,size,wall,pivot,m,type,length,pivot_value);
+	memcpy(&next_pointer,&(data[BF_BLOCK_SIZE-sizeof(int)]),sizeof(int));
+	BF_Block_SetDirty(block);
+	//BF_UnpinBlock(block);
+	//BF_Block_Destroy(&block);
+	free(pivot_value);
+	return next_pointer;
+}
+
+
+
+SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldNo,int bufferSize){
+	BF_Block *out_block;
+	BF_Block *temp_block;
+	BF_Block_Init(&temp_block);
+	BF_Block_Init(&out_block);
+	int temp_fileDesc;
+	SR_CreateFile("temp");
+	SR_OpenFile("temp",&temp_fileDesc);
+
+	BF_AllocateBlock(out_fileDesc,out_block);
+	BF_AllocateBlock(temp_fileDesc,temp_block);
+	BF_UnpinBlock(out_block);
+	BF_UnpinBlock(temp_block);
+	char *out_data;
+	char *temp_data;
+
+
+	int counter;
+	Block_Data * block_data;
+	int N;
+	int M = bufferSize;
+	if(BF_GetBlockCounter(in_fileDesc,&N) != BF_OK){
+		BF_Block_Destroy(&temp_block); 
+		BF_Block_Destroy(&out_block); 
+	    return SR_ERROR;
+	}
+	N--; 									//Except the first metadata block
+
+
+	block_data = (Block_Data *)malloc(sizeof(Block_Data)*(M-1));
+	int i;
+	for(i=0;i<M-1;i++){
+		BF_Block_Init(&(block_data[i].block));
+	}
+	int k = (int)ceil(N/(double)(M-1));
+
+	int j;
+	int loop = 0;
+	int size = sizeof(Record);
+	int m;
+	int length;
+	char type;
+	void *value;
+	switch(fieldNo){
+		case 0:{
+			m = 0;
+			length = sizeof(int);
+			value = (int *)malloc(sizeof(int));
+			type = 'i';
+			break;
 		}
-		else{
+		case 1:{
+			m = sizeof(int);
+			length = sizeof(char)*15;
+			value = (char *)malloc(sizeof(char)*length);
+			type = 'c';
+			break;
+		}
+		case 2:{
+			m = sizeof(int)+sizeof(char)*15;
+			length = sizeof(char)*20;
+			value = (char *)malloc(sizeof(char)*length);
+			type = 'c';
+			break;
+		}
+		case 3:{
+			m = sizeof(int)+sizeof(char)*(15+20);
+			length = sizeof(char)*20;
+			value = (char *)malloc(sizeof(char)*length);
+			type = 'c';
 			break;
 		}
 	}
-	BF_Block_Destroy(&block);
-	free(pivot_value);
-	return next_pointer;
+
+	int out_file_flag = 0;
+	int fd;
+	char * write_data;
+	BF_Block * write_block;
+	int write_counter;
+	int write_fd;
+	BF_Block_Init(&write_block);
+	int max_blocks;
+	int end = 0;
+	while(k != 0){
+		if(loop == 0){
+			fd = in_fileDesc;						//IN
+			write_fd = temp_fileDesc;				//OUT
+			max_blocks = 1;
+		}
+		else{
+			max_blocks *= (M-1);
+			if(out_file_flag){
+				fd = temp_fileDesc;					//IN
+				write_fd = out_fileDesc;			//OUT
+			}
+			else{
+				fd = out_fileDesc; 					//IN
+				write_fd = temp_fileDesc;			//OUT
+			}
+		}
+		out_file_flag = (out_file_flag +1) % 2;
+		BF_GetBlock(write_fd,1,write_block);
+		write_data = BF_Block_GetData(write_block);
+		write_counter = 0;
+		num_block = 1;
+		
+		for(j=0;j<k;j++){
+			printf("Group %d:\n",j);
+			//Initialize the Block Data and Sort the block if stage 0
+			for(i=0;i<M-1;i++){
+				if(num_block == -1){
+					//NOT UNPIN ALL
+					break;
+				}
+				if(BF_GetBlock(fd,num_block,block_data[i].block) != BF_OK){  //Get the first block
+				    BF_Block_Destroy(&block_data[i].block);
+				    return SR_ERROR;                                                      //Return error
+				}
+				block_data[i].data = BF_Block_GetData(block_data[i].block);
+				block_data[i].counter = 0;
+				block_data[i].num_of_blocks = 1;
+				printf("\tBLOCK %d\n",num_block);
+				block_data[i].block_num = num_block;
+				if(loop == 0){
+					num_block = SortBlock(num_block,block_data[i].block,block_data[i].data,
+						fieldNo);
+				}
+				else{
+					num_block = num_block + max_blocks;
+					if(num_block > N){
+						num_block = -1;
+					}
+					//memcpy(&num_block,&(block_data[i].data[BF_BLOCK_SIZE-sizeof(int)]),sizeof(int));
+				}
+			}
+			//MergeSort
+			//int flag;
+			int min = -1;
+			while(1){
+				printf("Write counter %d\n",write_counter);
+				//Get the min value from blocks
+				min = -1;
+				int i;
+				for(i=0;i<M-1;i++){
+					int pos1 = block_data[i].counter;
+					//If block has finished
+					if(pos1 == -1){
+						//and we are in the first block
+						if(i == 0){
+							int pos2 = block_data[i+1].counter;
+							//Check the second
+							if(pos2 != -1){
+								min = i+1;
+								memcpy(value,&(block_data[i+1].data[sizeof(int)+size*pos2+m]),length);
+							}
+						}
+						i++;
+						continue;
+					}
+					//Otherwise
+					//comapre first block with the second
+					if(i == 0){
+						int pos2 = block_data[i+1].counter;
+						if(pos2 == -1 || !compare(&(block_data[i].data[sizeof(int)+size*pos1+m]),
+							&(block_data[i+1].data[sizeof(int)+size*pos2+m]),type,length)){
+							min = 0;
+							memcpy(value,&(block_data[i].data[sizeof(int)+size*pos1+m]),length);
+						}
+						else{
+							min = 1;
+							memcpy(value,&(block_data[i+1].data[sizeof(int)+size*pos2+m]),length);
+						}
+						i++;
+					}
+					//Otherwise check the min with the current block
+					else{
+						if(min == -1 || !compare(&(block_data[i].data[sizeof(int)+size*pos1+m]),
+							value,type,length)){
+							min = i;
+							memcpy(value,&(block_data[i].data[sizeof(int)+size*pos1+m]),length);
+						}
+					}
+				}
+				if(min == -1){
+					break;
+				}
+				if (write_counter >= (BF_BLOCK_SIZE - 2*sizeof(int))/ sizeof(Record)){
+					int next_pointer;
+					BF_GetBlockCounter(write_fd,&next_pointer);
+					memcpy(&(write_data[BF_BLOCK_SIZE-sizeof(int)]),&next_pointer,sizeof(int));
+					BF_Block_SetDirty(write_block);
+					BF_UnpinBlock(write_block);
+					BF_AllocateBlock(write_fd,write_block);
+    				write_data = BF_Block_GetData(write_block);
+    				write_counter = 0;
+    				next_pointer = -1;
+    				memcpy(&(write_data[BF_BLOCK_SIZE-sizeof(int)]),&next_pointer,sizeof(int));
+				}
+				int pos = block_data[min].counter;
+				Record record;
+				memcpy(&(write_data[sizeof(int)+size*write_counter]),
+					&(block_data[min].data[sizeof(int)+size*pos]),sizeof(int));
+
+			    memcpy(&(write_data[2*sizeof(int)+size*write_counter]),
+			    	&(block_data[min].data[2*sizeof(int)+size*pos]),sizeof(record.name));
+
+			    memcpy(&(write_data[2*sizeof(int)+sizeof(record.name)+size*write_counter]),
+			    	&(block_data[min].data[2*sizeof(int)+sizeof(record.name)+size*pos]),sizeof(record.surname));
+			    
+			    memcpy(&(write_data[2*sizeof(int)+sizeof(record.name)+sizeof(record.surname)+size*write_counter]),
+			    	&(block_data[min].data[2*sizeof(int)+sizeof(record.name)+sizeof(record.surname)+size*pos]),sizeof(record.city));
+			
+				block_data[min].counter++;
+				int temp_counter;
+				memcpy(&temp_counter,block_data[min].data,sizeof(int));
+				if(temp_counter <= block_data[min].counter){
+					int next = 0;
+					if(loop != 0){
+						;//memcpy(block_data[min].data,&next,sizeof(int));
+					}
+					memcpy(&next,&(block_data[min].data[BF_BLOCK_SIZE-sizeof(int)]),sizeof(int));
+					if(block_data[min].num_of_blocks < max_blocks && next != -1){
+						block_data[min].counter = 0;
+						BF_Block_SetDirty(block_data[min].block);
+						BF_UnpinBlock(block_data[min].block);
+						BF_GetBlock(fd,next,block_data[min].block);
+						block_data[min].data = BF_Block_GetData(block_data[min].block);
+						block_data[min].num_of_blocks++;
+					}
+					else{
+						block_data[min].counter = -1;
+					}
+				}
+				write_counter++;
+				memcpy(write_data,&write_counter,sizeof(int));
+
+			}
+			int p;
+			for(p=0;p<i;p++){
+				if(p == M-2){
+					//memcpy(&num_block,&(block_data[p].data[BF_BLOCK_SIZE-sizeof(int)]),sizeof(int));
+				}
+				int count = 0;
+				if(loop != 0){
+					;//memcpy(block_data[p].data,&count,sizeof(int));
+				}
+				BF_Block_SetDirty(block_data[p].block);
+				BF_UnpinBlock(block_data[p].block);
+			}
+			//num_block;
+		}
+		k = (int)ceil(k/(double)(M-1));
+		if(k == 1){
+			end++;
+		}
+		if(end > 1){
+			break;
+		}
+		loop++;
+		printf("Depth %d\n",loop);
+		printf("Loop:%d K: %d\n",loop,k);
+	}
+	free(value);
+	for(i=0;i<M-1;i++){
+		BF_Block_Destroy(&(block_data[i].block));
+	}
+	SR_PrintAllEntries(out_fileDesc);
+	printf("--------------------\n");
+	SR_PrintAllEntries(temp_fileDesc);
+	exit(1);
 }

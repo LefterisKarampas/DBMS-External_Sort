@@ -21,13 +21,15 @@ int PrintBlock(int fileDesc,int block_num){
 	memcpy(&counter,data,sizeof(int));
 	int size = sizeof(Record);
 	Record record;
+	printf("Block: %d\n",block_num);
 	for(int i=0;i<counter;i++){
 		memcpy(&(record.id),&(data[sizeof(int)+size*i]),sizeof(int));
 		memcpy(&(record.name),&(data[2*sizeof(int)+size*i]),sizeof(record.name));
 		memcpy(&(record.surname),&(data[2*sizeof(int)+size*i+sizeof(record.name)]),sizeof(record.surname));
 		memcpy(&(record.city),&(data[2*sizeof(int)+size*i+sizeof(record.name)+sizeof(record.surname)]),sizeof(record.city));
-		printf("%d,%s,%s,%s\n",record.id,record.name,record.surname,record.city);
+		printf("\t%d,%s,%s,%s\n",record.id,record.name,record.surname,record.city);
 	}
+	printf("-------------------------\n");
 	int next_pointer;
 	memcpy(&next_pointer,&(data[BF_BLOCK_SIZE-sizeof(int)]),sizeof(int));
 	BF_UnpinBlock(block);
