@@ -169,6 +169,10 @@ SR_ErrorCode SR_SortedFile(
   int fieldNo,
   int bufferSize
 ) {
+
+    if(bufferSize > BF_BUFFER_SIZE || bufferSize < 3){
+      return SR_ERROR;
+    }
     int fileDesc;
     int out_fileDesc;
     SR_OpenFile(input_filename, &fileDesc);

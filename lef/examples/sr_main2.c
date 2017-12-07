@@ -33,6 +33,5 @@ int main() {
   printf("Sorting sorted_surname.db file in 'field' ...");
   //exit(1);
   CALL_OR_DIE(SR_SortedFile("sorted_name.db", "sorted_id.db", 0, 9))
-  exit(1);
   BF_Close();
 }

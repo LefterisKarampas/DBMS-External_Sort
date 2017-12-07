@@ -392,13 +392,10 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 	memcpy(&(write_data[BF_BLOCK_SIZE-sizeof(int)]),&null_pointer,sizeof(int));
 	BF_Block_SetDirty(write_block);
 	BF_UnpinBlock(write_block);
-	printf("--------------------\n");
-	SR_PrintAllEntries(out_fileDesc);
 	BF_CloseFile(temp_fileDesc);
 	unlink("temp");
 	free(block_data);
 	BF_Block_Destroy(&out_block);
 	BF_Block_Destroy(&temp_block);
 	BF_Block_Destroy(&write_block);
-	//exit(1);
 }
