@@ -28,10 +28,11 @@ int main() {
   CALL_OR_DIE(SR_Init());
   printf("Sorting 'unsorted_data.db' file in field 'name' ...");
   CALL_OR_DIE(SR_SortedFile("unsorted_data.db", "sorted_name.db", 1, 3))
-  exit(1);
   printf("Sorting 'unsorted_data.db' file in field 'surname' ...");
   CALL_OR_DIE(SR_SortedFile("unsorted_data.db", "sorted_surname.db", 2, 33))
   printf("Sorting sorted_surname.db file in 'field' ...");
+  exit(1);
   CALL_OR_DIE(SR_SortedFile("sorted_name.db", "sorted_id.db", 0, 9))
+  exit(1);
   BF_Close();
 }

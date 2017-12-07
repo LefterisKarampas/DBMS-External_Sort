@@ -8,6 +8,7 @@
 #include "Struct.h"
 #include <stdio.h>
 #include <math.h>
+#include <unistd.h>
 
 int intlog(double base, double x) {
     return ceil((log(x) /(double)log(base)));
@@ -103,8 +104,6 @@ int SortBlock(int num_block,BF_Block *block,char *data,int fieldNo){
 	QuickSort(data,size,wall,pivot,m,type,length,pivot_value);
 	memcpy(&next_pointer,&(data[BF_BLOCK_SIZE-sizeof(int)]),sizeof(int));
 	BF_Block_SetDirty(block);
-	//BF_UnpinBlock(block);
-	//BF_Block_Destroy(&block);
 	free(pivot_value);
 	return next_pointer;
 }
@@ -115,7 +114,6 @@ int Initialize_BlockData(Block_Data *block_data,int fd,int M,int num_block,int m
 	int i;
 	for(i=0;i<M-1;i++){
 		if(num_block == -1){
-			//NOT UNPIN ALL
 			break;
 		}
 		if(BF_GetBlock(fd,num_block,block_data[i].block) != BF_OK){  //Get the first block
@@ -125,7 +123,6 @@ int Initialize_BlockData(Block_Data *block_data,int fd,int M,int num_block,int m
 		block_data[i].data = BF_Block_GetData(block_data[i].block);
 		block_data[i].counter = 0;
 		block_data[i].num_of_blocks = 1;
-		printf("\tBLOCK %d\n",num_block);
 		block_data[i].block_num = num_block;
 		if(loop == 0){
 			num_block = SortBlock(num_block,block_data[i].block,block_data[i].data,
@@ -136,7 +133,6 @@ int Initialize_BlockData(Block_Data *block_data,int fd,int M,int num_block,int m
 			if(num_block > N){
 				num_block = -1;
 			}
-			//memcpy(&num_block,&(block_data[i].data[BF_BLOCK_SIZE-sizeof(int)]),sizeof(int));
 		}
 	}
 	return i;
@@ -145,43 +141,18 @@ int Initialize_BlockData(Block_Data *block_data,int fd,int M,int num_block,int m
 int Find_min(Block_Data *block_data,int M,int m,int length,char type,int size,void *value){
 	int i;
 	int min = -1;
-	for(i=0;i<M-1;i++){
-		int pos1 = block_data[i].counter;
+	for(i=0;i<M;i++){
+		int pos = block_data[i].counter;
 		//If block has finished
-		if(pos1 == -1){
-			//and we are in the first block
-			if(i == 0){
-				int pos2 = block_data[i+1].counter;
-				//Check the second
-				if(pos2 != -1){
-					min = i+1;
-					memcpy(value,&(block_data[i+1].data[sizeof(int)+size*pos2+m]),length);
-				}
-			}
-			i++;
+		if(pos == -1){
 			continue;
-		}
-		//Otherwise
-		//comapre first block with the second
-		if(i == 0){
-			int pos2 = block_data[i+1].counter;
-			if(pos2 == -1 || !compare(&(block_data[i].data[sizeof(int)+size*pos1+m]),
-				&(block_data[i+1].data[sizeof(int)+size*pos2+m]),type,length)){
-				min = 0;
-				memcpy(value,&(block_data[i].data[sizeof(int)+size*pos1+m]),length);
-			}
-			else{
-				min = 1;
-				memcpy(value,&(block_data[i+1].data[sizeof(int)+size*pos2+m]),length);
-			}
-			i++;
 		}
 		//Otherwise check the min with the current block
 		else{
-			if(min == -1 || !compare(&(block_data[i].data[sizeof(int)+size*pos1+m]),
-				value,type,length)){
+			if((min == -1) || (!compare(&(block_data[i].data[sizeof(int)+size*pos+m]),
+				value,type,length))){
 				min = i;
-				memcpy(value,&(block_data[i].data[sizeof(int)+size*pos1+m]),length);
+				memcpy(value,&(block_data[i].data[sizeof(int)+size*pos+m]),length);
 			}
 		}
 	}
@@ -197,7 +168,6 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 	int temp_fileDesc;
 	SR_CreateFile("temp");
 	SR_OpenFile("temp",&temp_fileDesc);
-
 	BF_AllocateBlock(out_fileDesc,out_block);
 	BF_AllocateBlock(temp_fileDesc,temp_block);
 	BF_UnpinBlock(out_block);
@@ -231,6 +201,7 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 	int length;
 	char type;
 	void *value;
+
 	switch(fieldNo){
 		case 0:{
 			m = 0;
@@ -275,6 +246,14 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 	BF_Block_Init(&write_block);
 	int k = (int)ceil(N/(double)(M-1));
 	int current_block;
+	
+
+	if(max_loop % 2 == 0){
+		out_file_flag = 0;
+	}
+	else{
+		out_file_flag = 1;
+	}
 	while(loop < max_loop){
 		if(loop == 0){
 			fd = in_fileDesc;						//IN
@@ -304,19 +283,24 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 		num_block = 1;
 		//For each group of blocks
 		for(j=0;j<k;j++){
-			printf("Group %d:\n",j);
 			//Initialize the Block Data and Sort the block if stage 0
+			
 			i = Initialize_BlockData(block_data,fd,M,num_block,max_blocks,N,loop,fieldNo);
+			
 			num_block += max_blocks*(M-1);
 			int min = -1;
 			//Until merge_sort all the groups of block
 			while(1){
 				//printf("Write counter %d\n",write_counter);
 				//Get the min value from blocks
-				min = Find_min(block_data, M, m, length, type,size,value);
+				
+				min = Find_min(block_data,i, m, length, type,size,value);
+				
 				if(min == -1){
 					break;
 				}
+
+				
 				if (write_counter >= (BF_BLOCK_SIZE - 2*sizeof(int))/ sizeof(Record)){
 					if(loop < 2){
 						int next_pointer;
@@ -325,16 +309,20 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 						BF_Block_SetDirty(write_block);
 						BF_UnpinBlock(write_block);
 						BF_AllocateBlock(write_fd,write_block);
+						current_block = next_pointer;
 					}
 					else{
 						current_block++;
+						BF_Block_SetDirty(write_block);
+						BF_UnpinBlock(write_block);
 						BF_GetBlock(write_fd,current_block,write_block);
 					}
+					
     				write_data = BF_Block_GetData(write_block);
     				write_counter = 0;
-    				//next_pointer = -1;
-    				//memcpy(&(write_data[BF_BLOCK_SIZE-sizeof(int)]),&next_pointer,sizeof(int));
 				}
+
+				//WRITE DATA
 				int pos = block_data[min].counter;
 				Record record;
 				memcpy(&(write_data[sizeof(int)+size*write_counter]),
@@ -349,15 +337,17 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 			    memcpy(&(write_data[2*sizeof(int)+sizeof(record.name)+sizeof(record.surname)+size*write_counter]),
 			    	&(block_data[min].data[2*sizeof(int)+sizeof(record.name)+sizeof(record.surname)+size*pos]),sizeof(record.city));
 			
+				write_counter++;
+				memcpy(write_data,&write_counter,sizeof(int));
+
+				//UPDATE READ BLOCK INFO
 				block_data[min].counter++;
-				int temp_counter;
-				memcpy(&temp_counter,block_data[min].data,sizeof(int));
-				if(temp_counter <= block_data[min].counter){
-					int next = 0;
+				if((BF_BLOCK_SIZE - 2*sizeof(int))/ sizeof(Record) <= block_data[min].counter){
+					int next = -1;
 					memcpy(&next,&(block_data[min].data[BF_BLOCK_SIZE-sizeof(int)]),sizeof(int));
+
 					if(block_data[min].num_of_blocks < max_blocks && next != -1){
 						block_data[min].counter = 0;
-						BF_Block_SetDirty(block_data[min].block);
 						BF_UnpinBlock(block_data[min].block);
 						BF_GetBlock(fd,next,block_data[min].block);
 						block_data[min].data = BF_Block_GetData(block_data[min].block);
@@ -367,21 +357,14 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 						block_data[min].counter = -1;
 					}
 				}
-				write_counter++;
-				memcpy(write_data,&write_counter,sizeof(int));
-
 			}
 			int p;
 			for(p=0;p<i;p++){
-				BF_Block_SetDirty(block_data[p].block);
 				BF_UnpinBlock(block_data[p].block);
 			}
 		}
 		k = (int)ceil(k/(double)(M-1));
 		loop++;
-		printf("Depth %d\n",loop);
-		printf("Loop:%d K: %d\n",loop,k);
-		//exit(1);
 	}
 
 
@@ -389,10 +372,14 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 	for(i=0;i<M-1;i++){
 		BF_Block_Destroy(&(block_data[i].block));
 	}
+	int null_pointer = -1;
+	memcpy(&(write_data[BF_BLOCK_SIZE-sizeof(int)]),&null_pointer,sizeof(int));
 	BF_Block_SetDirty(write_block);
 	BF_UnpinBlock(write_block);
 	BF_Block_Destroy(&write_block);
 	printf("--------------------\n");
-	SR_PrintAllEntries(temp_fileDesc);
-	exit(1);
+	SR_PrintAllEntries(out_fileDesc);
+	BF_CloseFile(temp_fileDesc);
+	unlink("temp");
+	//exit(1);
 }
