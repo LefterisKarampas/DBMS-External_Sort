@@ -166,14 +166,27 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 	BF_Block_Init(&temp_block);
 	BF_Block_Init(&out_block);
 	int temp_fileDesc;
+	char *out_data;
+	char *temp_data;
+
+	//Create output file and update the first block with metadata
+	int start;
+	BF_GetBlockCounter(out_fileDesc,&start);
+	BF_AllocateBlock(out_fileDesc,out_block);
+	BF_GetBlock(out_fileDesc,0,temp_block);
+	temp_data = BF_Block_GetData(temp_block);
+	memcpy(&(temp_data[3]),&start,sizeof(int));
+	BF_Block_SetDirty(temp_block);
+	BF_UnpinBlock(temp_block);
+	BF_UnpinBlock(out_block);
+
+	//Create temp file for sorting
 	SR_CreateFile("temp");
 	SR_OpenFile("temp",&temp_fileDesc);
-	BF_AllocateBlock(out_fileDesc,out_block);
 	BF_AllocateBlock(temp_fileDesc,temp_block);
 	BF_UnpinBlock(out_block);
 	BF_UnpinBlock(temp_block);
-	char *out_data;
-	char *temp_data;
+	
 
 
 	int counter;
@@ -233,6 +246,7 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 		}
 	}
 
+
 	int out_file_flag = 0;
 	int fd;
 	char * write_data;
@@ -247,17 +261,18 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 	int k = (int)ceil(N/(double)(M-1));
 	int current_block;
 	
-
 	if(max_loop % 2 == 0){
-		out_file_flag = 0;
+		out_file_flag = 0;			//Start with temp_file to write
+		write_fd = temp_fileDesc;
 	}
 	else{
-		out_file_flag = 1;
+		out_file_flag = 1;			//Start with the out_file to write
+		write_fd = out_fileDesc;
 	}
+
 	while(loop < max_loop){
 		if(loop == 0){
 			fd = in_fileDesc;						//IN
-			write_fd = temp_fileDesc;				//OUT
 			max_blocks = 1;
 		}
 		else{
@@ -275,6 +290,7 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
     		BF_Block_SetDirty(write_block);
 			BF_UnpinBlock(write_block);
 		}
+
 		out_file_flag = (out_file_flag +1) % 2;
 		BF_GetBlock(write_fd,1,write_block);
 		write_data = BF_Block_GetData(write_block);
@@ -342,10 +358,10 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 
 				//UPDATE READ BLOCK INFO
 				block_data[min].counter++;
-				if((BF_BLOCK_SIZE - 2*sizeof(int))/ sizeof(Record) <= block_data[min].counter){
+				memcpy(&counter,block_data[min].data,sizeof(int));
+				if(counter <= block_data[min].counter){
 					int next = -1;
 					memcpy(&next,&(block_data[min].data[BF_BLOCK_SIZE-sizeof(int)]),sizeof(int));
-
 					if(block_data[min].num_of_blocks < max_blocks && next != -1){
 						block_data[min].counter = 0;
 						BF_UnpinBlock(block_data[min].block);
@@ -376,10 +392,13 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 	memcpy(&(write_data[BF_BLOCK_SIZE-sizeof(int)]),&null_pointer,sizeof(int));
 	BF_Block_SetDirty(write_block);
 	BF_UnpinBlock(write_block);
-	BF_Block_Destroy(&write_block);
 	printf("--------------------\n");
 	SR_PrintAllEntries(out_fileDesc);
 	BF_CloseFile(temp_fileDesc);
 	unlink("temp");
+	free(block_data);
+	BF_Block_Destroy(&out_block);
+	BF_Block_Destroy(&temp_block);
+	BF_Block_Destroy(&write_block);
 	//exit(1);
 }

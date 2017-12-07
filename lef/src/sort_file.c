@@ -35,7 +35,7 @@ SR_ErrorCode SR_CreateFile(const char *fileName) {
     return SR_ERROR;                                                              //Return error
   } 
   int m=0;
-  int default_block = 1;
+  int default_block = -1;
   char *data;
   data = BF_Block_GetData(block);
   memcpy(data, "SR", strlen("SR")+1);                                             //Initialize the new file
@@ -186,6 +186,12 @@ SR_ErrorCode SR_SortedFile(
     char *data;
     data = BF_Block_GetData(block);
     memcpy(&block_num,&(data[3]),sizeof(int));
+    if(block_num == -1){
+      BF_Block_Destroy(&block);
+      BF_CloseFile(fileDesc);
+      BF_CloseFile(out_fileDesc);
+      return SR_ERROR;
+    }
     BF_UnpinBlock(block);
     BF_Block_Destroy(&block);
     MergeSort(block_num,fileDesc,out_fileDesc,fieldNo,bufferSize);
