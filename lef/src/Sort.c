@@ -1,63 +1,22 @@
 #include "Sort.h"
 #include "bf.h"
 #include "sort_file.h"
+#include "QuickSort.h"
 #include <string.h>
 #include <stdlib.h>
 #include "Compare.h"
-#include "Print.h"
 #include "Struct.h"
 #include <stdio.h>
 #include <math.h>
 #include <unistd.h>
 
+
 int intlog(double base, double x) {
     return ceil((log(x) /(double)log(base)));
 }
 
-void swap(char *data,int size,int i,int j){
-	Record record;
-	memcpy(&(record.id),&(data[sizeof(int)+size*i]),sizeof(int));
-	memcpy(&(record.name),&(data[2*sizeof(int)+size*i]),sizeof(record.name));
-	memcpy(&(record.surname),&(data[2*sizeof(int)+size*i+sizeof(record.name)]),sizeof(record.surname));
-	memcpy(&(record.city),&(data[2*sizeof(int)+size*i+sizeof(record.name)+sizeof(record.surname)]),sizeof(record.city));
 
-	memcpy(&(data[sizeof(int)+size*i]),&(data[sizeof(int)+size*j]),sizeof(int));
-	memcpy(&(data[2*sizeof(int)+size*i]),&(data[2*sizeof(int)+size*j]),sizeof(record.name));
-	memcpy(&(data[2*sizeof(int)+size*i+sizeof(record.name)]),&(data[2*sizeof(int)+size*j+sizeof(record.name)]),sizeof(record.surname));
-	memcpy(&(data[2*sizeof(int)+size*i+sizeof(record.name)+sizeof(record.surname)]),&(data[2*sizeof(int)+size*j+sizeof(record.name)+sizeof(record.surname)]),sizeof(record.city));
-
-	memcpy(&(data[sizeof(int)+size*j]),&(record.id),sizeof(int));
-	memcpy(&(data[2*sizeof(int)+size*j]),&(record.name),sizeof(record.name));
-	memcpy(&(data[2*sizeof(int)+size*j+sizeof(record.name)]),&(record.surname),sizeof(record.surname));
-	memcpy(&(data[2*sizeof(int)+size*j+sizeof(record.name)+sizeof(record.surname)]),&(record.city),sizeof(record.city));
-}
-
-int partition(char *data,int size,int wall,int pivot,int m,char type,int length,void *pivot_value){
-	memcpy(pivot_value,&data[sizeof(int)+size*pivot+m],length);
-	for(int i=wall;i<pivot;i++){
-		if(!compare(&(data[sizeof(int)+size*i+m]),&(data[sizeof(int)+size*pivot+m]),type,length)){
-			if(i>wall){
-				swap(data,size,i,wall);
-			}
-			wall++;
-		}
-	}
-	swap(data,size,wall,pivot);
-	return wall;
-}
-
-
-void QuickSort(char *data,int size,int wall,int pivot,int m,char type,int length,void *pivot_value){
-	if(wall >= pivot){
-		return;
-	}
-	int r = partition(data,size,wall,pivot,m,type,length,pivot_value);
-	QuickSort(data,size,wall,r-1,m,type,length,pivot_value);
-	QuickSort(data,size,r+1,pivot,m,type,length,pivot_value);
-}
-
-
-int SortBlock(int num_block,BF_Block *block,char *data,int fieldNo){
+int SortBlock(int num_block,BF_Block *block,char *data,int m,int length,void *pivot_value,char type){
 	if(num_block == -1){
 		return -1;
 	}
@@ -66,51 +25,20 @@ int SortBlock(int num_block,BF_Block *block,char *data,int fieldNo){
 	int pivot = counter -1;
 	int wall = 0;
 	int size = sizeof(Record);
-	int m;
-	int length;
-	void * pivot_value;
-	char type;
-	switch(fieldNo){
-		case 0:{
-			m = 0;
-			length = sizeof(int);
-			pivot_value = (int *)malloc(sizeof(int));
-			type = 'i';
-			break;
-		}
-		case 1:{
-			m = sizeof(int);
-			length = sizeof(char)*15;
-			pivot_value = (char *)malloc(sizeof(char)*length);
-			type = 'c';
-			break;
-		}
-		case 2:{
-			m = sizeof(int)+sizeof(char)*15;
-			length = sizeof(char)*20;
-			pivot_value = (char *)malloc(sizeof(char)*length);
-			type = 'c';
-			break;
-		}
-		case 3:{
-			m = sizeof(int)+sizeof(char)*(15+20);
-			length = sizeof(char)*20;
-			pivot_value = (char *)malloc(sizeof(char)*length);
-			type = 'c';
-			break;
-		}
-	}
 	int next_pointer = num_block;
+
+	//Sort internal block with QuickSort
 	QuickSort(data,size,wall,pivot,m,type,length,pivot_value);
+
 	memcpy(&next_pointer,&(data[BF_BLOCK_SIZE-sizeof(int)]),sizeof(int));
 	BF_Block_SetDirty(block);
-	free(pivot_value);
 	return next_pointer;
 }
 
 
+
 int Initialize_BlockData(Block_Data *block_data,int fd,int M,int num_block,int max_blocks,int N,
-		int loop,int fieldNo){
+		int loop,int m,int length,void *pivot_value,char type){
 	int i;
 	for(i=0;i<M-1;i++){
 		if(num_block == -1){
@@ -118,15 +46,19 @@ int Initialize_BlockData(Block_Data *block_data,int fd,int M,int num_block,int m
 		}
 		if(BF_GetBlock(fd,num_block,block_data[i].block) != BF_OK){  //Get the first block
 		    BF_Block_Destroy(&block_data[i].block);
-		    return SR_ERROR;                                                      //Return error
+		    return SR_ERROR;         //Return error
 		}
+
+		//Initialize Block_Data structure
 		block_data[i].data = BF_Block_GetData(block_data[i].block);
 		block_data[i].counter = 0;
 		block_data[i].num_of_blocks = 1;
 		block_data[i].block_num = num_block;
+
+		//If stage 0 sort internal blocks
 		if(loop == 0){
 			num_block = SortBlock(num_block,block_data[i].block,block_data[i].data,
-				fieldNo);
+				m,length,pivot_value,type);
 		}
 		else{
 			num_block = num_block + max_blocks;
@@ -137,6 +69,8 @@ int Initialize_BlockData(Block_Data *block_data,int fd,int M,int num_block,int m
 	}
 	return i;
 }
+
+
 
 int Find_min(Block_Data *block_data,int M,int m,int length,char type,int size,void *value){
 	int i;
@@ -165,6 +99,7 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 	BF_Block *temp_block;
 	BF_Block_Init(&temp_block);
 	BF_Block_Init(&out_block);
+
 	int temp_fileDesc;
 	char *out_data;
 	char *temp_data;
@@ -173,11 +108,6 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 	int start;
 	BF_GetBlockCounter(out_fileDesc,&start);
 	BF_AllocateBlock(out_fileDesc,out_block);
-	BF_GetBlock(out_fileDesc,0,temp_block);
-	temp_data = BF_Block_GetData(temp_block);
-	memcpy(&(temp_data[3]),&start,sizeof(int));
-	BF_Block_SetDirty(temp_block);
-	BF_UnpinBlock(temp_block);
 	BF_UnpinBlock(out_block);
 
 	//Create temp file for sorting
@@ -190,17 +120,18 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 
 
 	int counter;
-	Block_Data * block_data;
 	int N;
 	int M = bufferSize;
+	//Get the number of blocks of input_file
 	if(BF_GetBlockCounter(in_fileDesc,&N) != BF_OK){
 		BF_Block_Destroy(&temp_block); 
 		BF_Block_Destroy(&out_block); 
 	    return SR_ERROR;
 	}
-	N--; 									//Except the first metadata block
+	N--; 	//Except the first metadata block
 
-
+	//Create the Block_Data structure
+	Block_Data * block_data;
 	block_data = (Block_Data *)malloc(sizeof(Block_Data)*(M-1));
 	int i;
 	for(i=0;i<M-1;i++){
@@ -215,6 +146,7 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 	char type;
 	void *value;
 
+	//Read the field that we are going to sort the file and initialize the vars
 	switch(fieldNo){
 		case 0:{
 			m = 0;
@@ -256,11 +188,15 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 	int max_blocks;
 	int loop = 0;
 
-	int max_loop = intlog(M-1,N);
+
+	int max_loop = intlog(M-1,N);	//Get the number of loops where we have to do
+									//for sorting the entire file
+
 	BF_Block_Init(&write_block);
-	int k = (int)ceil(N/(double)(M-1));
+	int k = (int)ceil(N/(double)(M-1)); 	//Number of sub-joints
 	int current_block;
 	
+
 	if(max_loop % 2 == 0){
 		out_file_flag = 0;			//Start with temp_file to write
 		write_fd = temp_fileDesc;
@@ -300,23 +236,18 @@ SR_ErrorCode MergeSort(int num_block,int in_fileDesc,int out_fileDesc,int fieldN
 		//For each group of blocks
 		for(j=0;j<k;j++){
 			//Initialize the Block Data and Sort the block if stage 0
-			
-			i = Initialize_BlockData(block_data,fd,M,num_block,max_blocks,N,loop,fieldNo);
+			i = Initialize_BlockData(block_data,fd,M,num_block,max_blocks,N,loop,m,length,value,type);
 			
 			num_block += max_blocks*(M-1);
 			int min = -1;
 			//Until merge_sort all the groups of block
 			while(1){
-				//printf("Write counter %d\n",write_counter);
 				//Get the min value from blocks
-				
 				min = Find_min(block_data,i, m, length, type,size,value);
-				
 				if(min == -1){
 					break;
 				}
 
-				
 				if (write_counter >= (BF_BLOCK_SIZE - 2*sizeof(int))/ sizeof(Record)){
 					if(loop < 2){
 						int next_pointer;

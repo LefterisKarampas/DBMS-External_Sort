@@ -31,7 +31,6 @@ int main() {
   printf("Sorting 'unsorted_data.db' file in field 'surname' ...");
   CALL_OR_DIE(SR_SortedFile("unsorted_data.db", "sorted_surname.db", 2, 33))
   printf("Sorting sorted_surname.db file in 'field' ...");
-  //exit(1);
   CALL_OR_DIE(SR_SortedFile("sorted_name.db", "sorted_id.db", 0, 9))
   BF_Close();
 }
